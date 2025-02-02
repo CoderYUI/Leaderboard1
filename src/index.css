@@ -5,48 +5,49 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: black;
-  color: #98FB98;
+  background-color: #0a0a0a;
+  color: white;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
-/* Neon glow effect for text */
-.neon-text {
-  text-shadow: 0 0 10px rgba(57,255,20,0.5),
-               0 0 20px rgba(57,255,20,0.3),
-               0 0 30px rgba(57,255,20,0.2);
+.leaderboard-gradient {
+  background: radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, rgba(0,0,0,0) 70%);
+}
+
+.leaderboard-item {
+  background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: all 0.3s ease;
+}
+
+.leaderboard-item:hover {
+  background: linear-gradient(90deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.07) 100%);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.rank-number {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+  width: 2.5rem;
+  text-align: center;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #000000;
+  background: rgba(255,255,255,0.05);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #39FF14;
-  border-radius: 4px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #32CD32;
-}
-
-/* Animation for logo pulse */
-@keyframes pulse {
-  0% {
-    filter: drop-shadow(0 0 5px rgba(57,255,20,0.5));
-  }
-  50% {
-    filter: drop-shadow(0 0 15px rgba(57,255,20,0.8));
-  }
-  100% {
-    filter: drop-shadow(0 0 5px rgba(57,255,20,0.5));
-  }
-}
-
-.animate-pulse {
-  animation: pulse 2s infinite;
+  background: rgba(255,255,255,0.3);
 }
