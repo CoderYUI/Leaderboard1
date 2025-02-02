@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, Plus, Edit2, Trash2, MinusCircle, LogIn, LogOut } from 'lucide-react';
+import { Trophy, Plus, Edit2, Trash2, MinusCircle, LogOut } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 interface LeaderboardEntry {
@@ -30,8 +30,25 @@ function App() {
       )
       .subscribe();
 
+    // Add keyboard shortcut listener for admin login
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Show admin login when pressing Ctrl + Shift + A
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setShowAdminLogin(true);
+      }
+      // Hide admin login when pressing Escape
+      if (e.key === 'Escape') {
+        setShowAdminLogin(false);
+        setAdminPassword('');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('keydown', handleKeyPress);
     };
   }, []);
 
@@ -163,22 +180,38 @@ function App() {
         )}
 
         {showAdminLogin && !isAdmin && (
-          <div className="mb-6">
-            <form onSubmit={handleAdminLogin} className="flex gap-2">
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Admin password"
-                className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-white/20 focus:ring-0 text-sm"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200"
-              >
-                Login
-              </button>
-            </form>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-black/90 p-6 rounded-xl border border-white/10 shadow-xl w-full max-w-md">
+              <h2 className="text-xl font-semibold text-white mb-4">Admin Access</h2>
+              <form onSubmit={handleAdminLogin} className="space-y-4">
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="Enter admin password"
+                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-white/20 focus:ring-0"
+                  autoFocus
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminLogin(false);
+                      setAdminPassword('');
+                    }}
+                    className="px-4 py-2 rounded-lg hover:bg-white/5 text-white/70 text-sm transition-all duration-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200"
+                  >
+                    Login
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 
@@ -284,8 +317,8 @@ function App() {
           </div>
         )}
 
-        <div className="mt-8 flex justify-end">
-          {isAdmin ? (
+        {isAdmin && (
+          <div className="mt-8 flex justify-end">
             <button
               onClick={handleAdminLogout}
               className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200 flex items-center gap-2"
@@ -293,16 +326,8 @@ function App() {
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Logout Admin</span>
             </button>
-          ) : (
-            <button
-              onClick={() => setShowAdminLogin(true)}
-              className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200 flex items-center gap-2"
-            >
-              <LogIn className="h-4 w-4" />
-              <span className="hidden sm:inline">Admin Login</span>
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
