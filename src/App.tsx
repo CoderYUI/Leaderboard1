@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Trophy, Plus, Edit2, Trash2, Search, Clock, SortAsc, SortDesc, LogOut, Upload, X, AlertTriangle } from 'lucide-react';
+import { Trophy, Plus, Edit2, Trash2, Search, Clock, SortAsc, SortDesc, LogOut, Upload, X, AlertTriangle, GamepadIcon } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 interface LeaderboardEntry {
@@ -7,16 +7,29 @@ interface LeaderboardEntry {
   name: string;
   points: number;
   created_at: string;
+  game: string;
 }
 
 type SortField = 'points' | 'name' | 'created_at';
 type SortOrder = 'asc' | 'desc';
+
+const GAMES = [
+  'The Latent',
+  'Lip Sync',
+  'Face Painting',
+  'Ice Cream Fight',
+  'Blindfold',
+  'Mystery Box'
+] as const;
+
+type Game = typeof GAMES[number];
 
 function App() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [filteredEntries, setFilteredEntries] = useState<LeaderboardEntry[]>([]);
   const [newName, setNewName] = useState('');
   const [newPoints, setNewPoints] = useState<number>(0);
+  const [newGame, setNewGame] = useState<Game>(GAMES[0]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPoints, setEditPoints] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +41,9 @@ function App() {
   const [sortField, setSortField] = useState<SortField>('points');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [showCsvUpload, setShowCsvUpload] = useState(false);
-  const [csvData, setCsvData] = useState<{ name: string; points: number }[]>([]);
+  const [csvData, setCsvData] = useState<{ name: string; points: number; game: string }[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<Game | 'all'>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -63,10 +77,21 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const filtered = entries.filter(entry =>
-      entry.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let filtered = entries;
     
+    // Filter by game
+    if (selectedGame !== 'all') {
+      filtered = filtered.filter(entry => entry.game === selectedGame);
+    }
+    
+    // Filter by search term
+    if (searchTerm) {
+      filtered = filtered.filter(entry =>
+        entry.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Sort entries
     const sorted = [...filtered].sort((a, b) => {
       if (sortField === 'points') {
         return sortOrder === 'desc' ? b.points - a.points : a.points - b.points;
@@ -82,7 +107,7 @@ function App() {
     });
 
     setFilteredEntries(sorted);
-  }, [entries, searchTerm, sortField, sortOrder]);
+  }, [entries, searchTerm, sortField, sortOrder, selectedGame]);
 
   const fetchLeaderboard = async () => {
     setIsLoading(true);
@@ -132,9 +157,10 @@ function App() {
       const headers = lines[0].toLowerCase().split(',');
       const nameIndex = headers.indexOf('name');
       const pointsIndex = headers.indexOf('points');
+      const gameIndex = headers.indexOf('game');
 
-      if (nameIndex === -1 || pointsIndex === -1) {
-        setError('CSV must have "name" and "points" columns');
+      if (nameIndex === -1 || pointsIndex === -1 || gameIndex === -1) {
+        setError('CSV must have "name", "points", and "game" columns');
         return;
       }
 
@@ -144,10 +170,11 @@ function App() {
           const values = line.split(',');
           return {
             name: values[nameIndex].trim(),
-            points: parseInt(values[pointsIndex], 10)
+            points: parseInt(values[pointsIndex], 10),
+            game: values[gameIndex].trim()
           };
         })
-        .filter(entry => !isNaN(entry.points) && entry.name);
+        .filter(entry => !isNaN(entry.points) && entry.name && GAMES.includes(entry.game as Game));
 
       setCsvData(parsedData);
     };
@@ -162,6 +189,7 @@ function App() {
         const { data: existingPlayer } = await supabase
           .from('leaderboard')
           .select('*')
+          .eq('game', entry.game)
           .ilike('name', entry.name)
           .single();
 
@@ -173,7 +201,7 @@ function App() {
         } else {
           await supabase
             .from('leaderboard')
-            .insert([{ name: entry.name, points: entry.points }]);
+            .insert([{ name: entry.name, points: entry.points, game: entry.game }]);
         }
       }
 
@@ -202,6 +230,7 @@ function App() {
       const { data: existingPlayer } = await supabase
         .from('leaderboard')
         .select('*')
+        .eq('game', newGame)
         .ilike('name', newName.trim())
         .single();
 
@@ -215,7 +244,7 @@ function App() {
       } else {
         const { error: insertError } = await supabase
           .from('leaderboard')
-          .insert([{ name: newName.trim(), points: newPoints }]);
+          .insert([{ name: newName.trim(), points: newPoints, game: newGame }]);
 
         if (insertError) throw insertError;
       }
@@ -281,7 +310,7 @@ function App() {
       const { error: deleteError } = await supabase
         .from('leaderboard')
         .delete()
-        .gte('created_at', '1970-01-01'); // Delete all rows by using a date condition
+        .gte('created_at', '1970-01-01');
 
       if (deleteError) throw deleteError;
       
@@ -305,7 +334,7 @@ function App() {
 
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-8 leaderboard-gradient">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl sm:text-4xl font-bold text-center text-white mb-8 tracking-wider">
           LEADERBOARD
         </h1>
@@ -368,9 +397,9 @@ function App() {
                 <div className="p-4 bg-white/5 border border-white/10 rounded-lg">
                   <p className="text-sm text-white/70 mb-2">CSV Format:</p>
                   <code className="text-xs text-white/60 block">
-                    name,points<br />
-                    John Doe,100<br />
-                    Jane Smith,200
+                    name,points,game<br />
+                    John Doe,100,The Latent<br />
+                    Jane Smith,200,Lip Sync
                   </code>
                 </div>
                 <input
@@ -394,6 +423,7 @@ function App() {
                         <div key={index} className="text-sm text-white/60 flex justify-between">
                           <span>{entry.name}</span>
                           <span>{entry.points}</span>
+                          <span>{entry.game}</span>
                         </div>
                       ))}
                     </div>
@@ -466,6 +496,15 @@ function App() {
                 placeholder="Points"
                 className="w-full sm:w-24 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-white/20 focus:ring-0 text-sm"
               />
+              <select
+                value={newGame}
+                onChange={(e) => setNewGame(e.target.value as Game)}
+                className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:border-white/20 focus:ring-0 text-sm"
+              >
+                {GAMES.map(game => (
+                  <option key={game} value={game} className="bg-gray-900">{game}</option>
+                ))}
+              </select>
               <button
                 type="submit"
                 className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
@@ -506,6 +545,16 @@ function App() {
               className="w-full pl-10 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-white/20 focus:ring-0 text-sm"
             />
           </div>
+          <select
+            value={selectedGame}
+            onChange={(e) => setSelectedGame(e.target.value as Game | 'all')}
+            className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:border-white/20 focus:ring-0 text-sm"
+          >
+            <option value="all" className="bg-gray-900">All Games</option>
+            {GAMES.map(game => (
+              <option key={game} value={game} className="bg-gray-900">{game}</option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <button
               onClick={() => toggleSort('points')}
@@ -536,83 +585,97 @@ function App() {
           </div>
         </div>
 
-        <div className="space-y-2">
-          {isLoading ? (
-            Array.from({ length: 5 }).map((_, index) => (
-              <div
-                key={index}
-                className="leaderboard-item rounded-lg p-3 flex items-center gap-4 shimmer"
-              >
-                <div className="rank-number opacity-30">{String(index + 1).padStart(2, '0')}</div>
-                <div className="flex-1 h-6 bg-white/10 rounded"></div>
-                <div className="w-20 h-6 bg-white/10 rounded"></div>
-              </div>
-            ))
-          ) : filteredEntries.map((entry, index) => (
-            <div
-              key={entry.id}
-              className="leaderboard-item rounded-lg p-3 flex items-center gap-4"
-            >
-              <div className="rank-number">{String(index + 1).padStart(2, '0')}</div>
-              <div className="flex-1 truncate">
-                {editingId === entry.id ? (
-                  <input
-                    type="text"
-                    value={entry.name}
-                    readOnly
-                    className="w-full bg-transparent border-none text-white focus:ring-0 p-0"
-                  />
-                ) : (
-                  <span className="text-white/90">{entry.name}</span>
-                )}
-              </div>
-              <div className="flex items-center gap-4">
-                {editingId === entry.id ? (
-                  <input
-                    type="number"
-                    value={editPoints}
-                    onChange={(e) => setEditPoints(Number(e.target.value))}
-                    className="w-20 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-right focus:border-white/20 focus:ring-0 text-sm"
-                  />
-                ) : (
-                  <span className="text-white/90 tabular-nums">{entry.points}</span>
-                )}
-                {isAdmin && (
-                  <div className="flex items-center gap-1">
-                    {editingId === entry.id ? (
-                      <button
-                        onClick={() => updatePoints(entry.id, editPoints)}
-                        className="p-1 hover:bg-white/10 rounded"
-                      >
-                        Save
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => {
-                            setEditingId(entry.id);
-                            setEditPoints(entry.points);
-                          }}
-                          className="p-1 hover:bg-white/10 rounded opacity-50 hover:opacity-100"
-                          title="Edit points"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteEntry(entry.id)}
-                          className="p-1 hover:bg-red-500/20 rounded opacity-50 hover:opacity-100"
-                          title="Delete player"
-                        >
-                          <Trash2 className="h-4 w-4 text-red-400" />
-                        </button>
-                      </>
-                    )}
+        {GAMES.map(game => {
+          const gameEntries = filteredEntries.filter(entry => entry.game === game);
+          if (selectedGame !== 'all' && selectedGame !== game) return null;
+          if (gameEntries.length === 0) return null;
+
+          return (
+            <div key={game} className="mb-8">
+              <h2 className="text-xl font-semibold text-white/90 mb-4 flex items-center gap-2">
+                <GamepadIcon className="h-5 w-5" />
+                {game}
+              </h2>
+              <div className="space-y-2">
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="leaderboard-item rounded-lg p-3 flex items-center gap-4 shimmer"
+                    >
+                      <div className="rank-number opacity-30">{String(index + 1).padStart(2, '0')}</div>
+                      <div className="flex-1 h-6 bg-white/10 rounded"></div>
+                      <div className="w-20 h-6 bg-white/10 rounded"></div>
+                    </div>
+                  ))
+                ) : gameEntries.map((entry, index) => (
+                  <div
+                    key={entry.id}
+                    className="leaderboard-item rounded-lg p-3 flex items-center gap-4"
+                  >
+                    <div className="rank-number">{String(index + 1).padStart(2, '0')}</div>
+                    <div className="flex-1 truncate">
+                      {editingId === entry.id ? (
+                        <input
+                          type="text"
+                          value={entry.name}
+                          readOnly
+                          className="w-full bg-transparent border-none text-white focus:ring-0 p-0"
+                        />
+                      ) : (
+                        <span className="text-white/90">{entry.name}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {editingId === entry.id ? (
+                        <input
+                          type="number"
+                          value={editPoints}
+                          onChange={(e) => setEditPoints(Number(e.target.value))}
+                          className="w-20 px-2 py-1 rounded bg-white/5 border border-white/10 text-white text-right focus:border-white/20 focus:ring-0 text-sm"
+                        />
+                      ) : (
+                        <span className="text-white/90 tabular-nums">{entry.points}</span>
+                      )}
+                      {isAdmin && (
+                        <div className="flex items-center gap-1">
+                          {editingId === entry.id ? (
+                            <button
+                              onClick={() => updatePoints(entry.id, editPoints)}
+                              className="p-1 hover:bg-white/10 rounded"
+                            >
+                              Save
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingId(entry.id);
+                                  setEditPoints(entry.points);
+                                }}
+                                className="p-1 hover:bg-white/10 rounded opacity-50 hover:opacity-100"
+                                title="Edit points"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteEntry(entry.id)}
+                                className="p-1 hover:bg-red-500/20 rounded opacity-50 hover:opacity-100"
+                                title="Delete player"
+                              >
+                                <Trash2 className="h-4 w-4 text-red-400" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
 
         {!isLoading && filteredEntries.length === 0 && (
           <div className="text-center py-12 text-white/30">
