@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Trophy, Plus, Edit2, Trash2, Search, Clock, SortAsc, SortDesc, LogOut, Upload, X, AlertTriangle, GamepadIcon } from 'lucide-react';
+import { Trophy, Plus, Edit2, Trash2, Search, Clock, SortAsc, SortDesc, LogOut, Upload, X, AlertTriangle, GamepadIcon, Copy, HelpCircle } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 interface LeaderboardEntry {
@@ -29,7 +29,7 @@ function App() {
   const [filteredEntries, setFilteredEntries] = useState<LeaderboardEntry[]>([]);
   const [newName, setNewName] = useState('');
   const [newPoints, setNewPoints] = useState<number>(0);
-  const [newGame, setNewGame] = useState<Game>(GAMES[0]);
+  const [selectedGames, setSelectedGames] = useState<Game[]>([GAMES[0]]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPoints, setEditPoints] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
@@ -41,9 +41,11 @@ function App() {
   const [sortField, setSortField] = useState<SortField>('points');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [showCsvUpload, setShowCsvUpload] = useState(false);
-  const [csvData, setCsvData] = useState<{ name: string; points: number; game: string }[]>([]);
+  const [csvData, setCsvData] = useState<{ name: string; points: number; games: string[] }[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [selectedGame, setSelectedGame] = useState<Game | 'all'>('all');
+  const [showCopyGames, setShowCopyGames] = useState<string | null>(null);
+  const [copyToGames, setCopyToGames] = useState<Game[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,6 +67,7 @@ function App() {
         setShowAdminLogin(false);
         setAdminPassword('');
         setShowCsvUpload(false);
+        setShowCopyGames(null);
       }
     };
 
@@ -79,19 +82,16 @@ function App() {
   useEffect(() => {
     let filtered = entries;
     
-    // Filter by game
     if (selectedGame !== 'all') {
       filtered = filtered.filter(entry => entry.game === selectedGame);
     }
     
-    // Filter by search term
     if (searchTerm) {
       filtered = filtered.filter(entry =>
         entry.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    // Sort entries
     const sorted = [...filtered].sort((a, b) => {
       if (sortField === 'points') {
         return sortOrder === 'desc' ? b.points - a.points : a.points - b.points;
@@ -157,10 +157,10 @@ function App() {
       const headers = lines[0].toLowerCase().split(',');
       const nameIndex = headers.indexOf('name');
       const pointsIndex = headers.indexOf('points');
-      const gameIndex = headers.indexOf('game');
+      const gamesIndex = headers.indexOf('games');
 
-      if (nameIndex === -1 || pointsIndex === -1 || gameIndex === -1) {
-        setError('CSV must have "name", "points", and "game" columns');
+      if (nameIndex === -1 || pointsIndex === -1 || gamesIndex === -1) {
+        setError('CSV must have "name", "points", and "games" columns');
         return;
       }
 
@@ -168,13 +168,17 @@ function App() {
         .filter(line => line.trim())
         .map(line => {
           const values = line.split(',');
+          const games = values[gamesIndex].split(';')
+            .map(g => g.trim())
+            .filter(g => GAMES.includes(g as Game));
+          
           return {
             name: values[nameIndex].trim(),
             points: parseInt(values[pointsIndex], 10),
-            game: values[gameIndex].trim()
+            games
           };
         })
-        .filter(entry => !isNaN(entry.points) && entry.name && GAMES.includes(entry.game as Game));
+        .filter(entry => !isNaN(entry.points) && entry.name && entry.games.length > 0);
 
       setCsvData(parsedData);
     };
@@ -186,22 +190,24 @@ function App() {
 
     try {
       for (const entry of csvData) {
-        const { data: existingPlayer } = await supabase
-          .from('leaderboard')
-          .select('*')
-          .eq('game', entry.game)
-          .ilike('name', entry.name)
-          .single();
+        for (const game of entry.games) {
+          const { data: existingPlayer } = await supabase
+            .from('leaderboard')
+            .select('*')
+            .eq('game', game)
+            .ilike('name', entry.name)
+            .single();
 
-        if (existingPlayer) {
-          await supabase
-            .from('leaderboard')
-            .update({ points: existingPlayer.points + entry.points })
-            .eq('id', existingPlayer.id);
-        } else {
-          await supabase
-            .from('leaderboard')
-            .insert([{ name: entry.name, points: entry.points, game: entry.game }]);
+          if (existingPlayer) {
+            await supabase
+              .from('leaderboard')
+              .update({ points: existingPlayer.points + entry.points })
+              .eq('id', existingPlayer.id);
+          } else {
+            await supabase
+              .from('leaderboard')
+              .insert([{ name: entry.name, points: entry.points, game }]);
+          }
         }
       }
 
@@ -224,37 +230,74 @@ function App() {
       setError('Admin access required');
       return;
     }
-    if (!newName.trim()) return;
+    if (!newName.trim() || selectedGames.length === 0) return;
 
     try {
-      const { data: existingPlayer } = await supabase
-        .from('leaderboard')
-        .select('*')
-        .eq('game', newGame)
-        .ilike('name', newName.trim())
-        .single();
-
-      if (existingPlayer) {
-        const { error: updateError } = await supabase
+      for (const game of selectedGames) {
+        const { data: existingPlayer } = await supabase
           .from('leaderboard')
-          .update({ points: existingPlayer.points + newPoints })
-          .eq('id', existingPlayer.id);
+          .select('*')
+          .eq('game', game)
+          .ilike('name', newName.trim())
+          .single();
 
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('leaderboard')
-          .insert([{ name: newName.trim(), points: newPoints, game: newGame }]);
+        if (existingPlayer) {
+          const { error: updateError } = await supabase
+            .from('leaderboard')
+            .update({ points: existingPlayer.points + newPoints })
+            .eq('id', existingPlayer.id);
 
-        if (insertError) throw insertError;
+          if (updateError) throw updateError;
+        } else {
+          const { error: insertError } = await supabase
+            .from('leaderboard')
+            .insert([{ name: newName.trim(), points: newPoints, game }]);
+
+          if (insertError) throw insertError;
+        }
       }
 
       setNewName('');
       setNewPoints(0);
+      setSelectedGames([GAMES[0]]);
       setError(null);
       await fetchLeaderboard();
     } catch (err) {
       console.error('Error in addEntry:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    }
+  };
+
+  const copyToOtherGames = async (entry: LeaderboardEntry) => {
+    if (!isAdmin || !copyToGames.length) return;
+
+    try {
+      for (const game of copyToGames) {
+        const { data: existingPlayer } = await supabase
+          .from('leaderboard')
+          .select('*')
+          .eq('game', game)
+          .ilike('name', entry.name)
+          .single();
+
+        if (existingPlayer) {
+          await supabase
+            .from('leaderboard')
+            .update({ points: entry.points })
+            .eq('id', existingPlayer.id);
+        } else {
+          await supabase
+            .from('leaderboard')
+            .insert([{ name: entry.name, points: entry.points, game }]);
+        }
+      }
+
+      setShowCopyGames(null);
+      setCopyToGames([]);
+      setError(null);
+      await fetchLeaderboard();
+    } catch (err) {
+      console.error('Error copying to other games:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
   };
@@ -397,10 +440,13 @@ function App() {
                 <div className="p-4 bg-white/5 border border-white/10 rounded-lg">
                   <p className="text-sm text-white/70 mb-2">CSV Format:</p>
                   <code className="text-xs text-white/60 block">
-                    name,points,game<br />
-                    John Doe,100,The Latent<br />
-                    Jane Smith,200,Lip Sync
+                    name,points,games<br />
+                    John Doe,100,The Latent;Lip Sync<br />
+                    Jane Smith,200,Face Painting;Mystery Box
                   </code>
+                  <p className="text-xs text-white/50 mt-2">
+                    Note: Multiple games should be separated by semicolons (;)
+                  </p>
                 </div>
                 <input
                   type="file"
@@ -420,10 +466,14 @@ function App() {
                     <p className="text-sm text-white/70 mb-2">Preview:</p>
                     <div className="max-h-40 overflow-y-auto space-y-1">
                       {csvData.map((entry, index) => (
-                        <div key={index} className="text-sm text-white/60 flex justify-between">
-                          <span>{entry.name}</span>
-                          <span>{entry.points}</span>
-                          <span>{entry.game}</span>
+                        <div key={index} className="text-sm text-white/60">
+                          <div className="flex justify-between">
+                            <span>{entry.name}</span>
+                            <span>{entry.points}</span>
+                          </div>
+                          <div className="text-xs text-white/40">
+                            Games: {entry.games.join(', ')}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -479,6 +529,69 @@ function App() {
           </div>
         )}
 
+        {showCopyGames && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-black/90 p-6 rounded-xl border border-white/10 shadow-xl w-full max-w-md">
+              <h2 className="text-xl font-semibold text-white mb-4">Copy to Other Games</h2>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {GAMES.map(game => {
+                    const entry = entries.find(e => e.id === showCopyGames);
+                    const isCurrentGame = entry?.game === game;
+                    const isSelected = copyToGames.includes(game);
+                    
+                    return (
+                      <button
+                        key={game}
+                        onClick={() => {
+                          if (isCurrentGame) return;
+                          setCopyToGames(prev =>
+                            isSelected
+                              ? prev.filter(g => g !== game)
+                              : [...prev, game]
+                          );
+                        }}
+                        disabled={isCurrentGame}
+                        className={`p-2 rounded-lg text-sm text-left transition-all duration-200 ${
+                          isCurrentGame
+                            ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-white/20 text-white border border-white/20'
+                            : 'bg-white/5 text-white/70 hover:bg-white/10'
+                        }`}
+                      >
+                        {game}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    onClick={() => {
+                      setShowCopyGames(null);
+                      setCopyToGames([]);
+                    }}
+                    className="px-4 py-2 rounded-lg hover:bg-white/5 text-white/70 text-sm transition-all duration-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const entry = entries.find(e => e.id === showCopyGames);
+                      if (entry) copyToOtherGames(entry);
+                    }}
+                    disabled={copyToGames.length === 0}
+                    className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {isAdmin && (
           <div className="mb-6">
             <form onSubmit={addEntry} className="flex flex-col sm:flex-row gap-2">
@@ -496,15 +609,25 @@ function App() {
                 placeholder="Points"
                 className="w-full sm:w-24 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-white/20 focus:ring-0 text-sm"
               />
-              <select
-                value={newGame}
-                onChange={(e) => setNewGame(e.target.value as Game)}
-                className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:border-white/20 focus:ring-0 text-sm"
-              >
-                {GAMES.map(game => (
-                  <option key={game} value={game} className="bg-gray-900">{game}</option>
-                ))}
-              </select>
+              <div className="relative group">
+                <select
+                  multiple
+                  value={selectedGames}
+                  onChange={(e) => {
+                    const values = Array.from(e.target.selectedOptions).map(option => option.value as Game);
+                    setSelectedGames(values.length ? values : [GAMES[0]]);
+                  }}
+                  className="w-full sm:w-auto px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:border-white/20 focus:ring-0 text-sm appearance-none"
+                  size={1}
+                >
+                  {GAMES.map(game => (
+                    <option key={game} value={game} className="bg-gray-900">{game}</option>
+                  ))}
+                </select>
+                <div className="hidden group-hover:block absolute -top-8 left-0 bg-black/90 text-white/70 text-xs p-2 rounded whitespace-nowrap">
+                  Hold Ctrl/Cmd to select multiple
+                </div>
+              </div>
               <button
                 type="submit"
                 className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm transition-all duration-200 flex items-center justify-center gap-2"
@@ -595,7 +718,7 @@ function App() {
               <h2 className="text-xl font-semibold text-white/90 mb-4 flex items-center gap-2">
                 <GamepadIcon className="h-5 w-5" />
                 {game}
-              </h2>
+               </h2>
               <div className="space-y-2">
                 {isLoading ? (
                   Array.from({ length: 3 }).map((_, index) => (
@@ -657,6 +780,13 @@ function App() {
                                 title="Edit points"
                               >
                                 <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => setShowCopyGames(entry.id)}
+                                className="p-1 hover:bg-white/10 rounded opacity-50 hover:opacity-100"
+                                title="Copy to other games"
+                              >
+                                <Copy className="h-4 w-4" />
                               </button>
                               <button
                                 onClick={() => deleteEntry(entry.id)}
