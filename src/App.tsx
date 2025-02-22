@@ -14,6 +14,7 @@ type SortField = 'points' | 'name' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
 const GAMES = [
+  'Overall',
   'The Latent',
   'Lip Sync',
   'Face Painting',
@@ -375,6 +376,24 @@ function App() {
     }
   };
 
+  const calculateOverallEntries = (entries: LeaderboardEntry[]) => {
+    const overallScores = new Map<string, number>();
+    
+    entries.forEach(entry => {
+      if (entry.game === 'Overall') return; // Skip Overall entries
+      const currentTotal = overallScores.get(entry.name) || 0;
+      overallScores.set(entry.name, currentTotal + entry.points);
+    });
+  
+    return Array.from(overallScores.entries()).map(([name, points]) => ({
+      id: `overall-${name}`,
+      name,
+      points,
+      created_at: new Date().toISOString(),
+      game: 'Overall'
+    }));
+  };
+
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-8 leaderboard-gradient">
       <div className="max-w-4xl mx-auto">
@@ -709,16 +728,43 @@ function App() {
         </div>
 
         {GAMES.map(game => {
-          const gameEntries = filteredEntries.filter(entry => entry.game === game);
+          let gameEntries = filteredEntries.filter(entry => entry.game === game);
+          
+          // Special handling for Overall
+          if (game === 'Overall') {
+            gameEntries = calculateOverallEntries(entries);
+            // Apply search filter if needed
+            if (searchTerm) {
+              gameEntries = gameEntries.filter(entry =>
+                entry.name.toLowerCase().includes(searchTerm.toLowerCase())
+              );
+            }
+            // Apply sorting
+            gameEntries.sort((a, b) => {
+              if (sortField === 'points') {
+                return sortOrder === 'desc' ? b.points - a.points : a.points - b.points;
+              }
+              if (sortField === 'name') {
+                return sortOrder === 'desc' 
+                  ? b.name.localeCompare(a.name)
+                  : a.name.localeCompare(b.name);
+              }
+              return 0;
+            });
+          }
+        
           if (selectedGame !== 'all' && selectedGame !== game) return null;
           if (gameEntries.length === 0) return null;
-
+        
           return (
             <div key={game} className="mb-8">
               <h2 className="text-xl font-semibold text-white/90 mb-4 flex items-center gap-2">
                 <GamepadIcon className="h-5 w-5" />
                 {game}
-               </h2>
+                {game === 'Overall' && (
+                  <span className="text-sm text-white/50 ml-2">(Total of all games)</span>
+                )}
+              </h2>
               <div className="space-y-2">
                 {isLoading ? (
                   Array.from({ length: 3 }).map((_, index) => (
